@@ -1,0 +1,19 @@
+[
+  {
+    "AllowedOrigins": [
+      "https://farelel30-cmd.github.io"
+    ],
+    "AllowedMethods": [
+      "PUT",
+      "GET",
+      "HEAD"
+    ],
+    "AllowedHeaders": [
+      "*"
+    ],
+    "ExposeHeaders": [
+      "ETag"
+    ],
+    "MaxAgeSeconds": 3600
+  }
+]
