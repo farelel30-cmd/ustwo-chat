@@ -45,7 +45,7 @@ export default {
         key = user.id + "/" + crypto.randomUUID() + "-" + safeName;
       } else {
         key = typeof body.key === "string" ? body.key : "";
-        if (!key.startsWith(user.id + "/") || key.includes("..") || key.startsWith("/")) return json({ error: "Akses file ditolak." }, 403, corsOrigin);
+        if (!allowed.some(id => key.startsWith(id + "/")) || key.includes("..") || key.startsWith("/")) return json({ error: "Akses file ditolak." }, 403, corsOrigin);
       }
 
       if (!env.R2_ACCOUNT_ID || env.R2_ACCOUNT_ID.startsWith("GANTI_") || !env.R2_BUCKET || !env.R2_ACCESS_KEY_ID || !env.R2_SECRET_ACCESS_KEY) return json({ error: "Penyimpanan R2 belum dikonfigurasi." }, 503, corsOrigin);
