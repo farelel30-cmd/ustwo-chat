@@ -90,14 +90,39 @@
     if(m.kind==='text') body=`<div class="bubble">${esc(m.content||'')}</div>`;
     else if(m.kind==='image'||m.kind==='video'||m.kind==='audio'){
       const url=await mediaUrl(m.storage_key); if(!url){body=`<div class="bubble">${m.kind==='audio'?'Pesan suara':m.kind==='video'?'Video':'Foto'} · file belum tersedia</div>`;}
-      else if(m.kind==='image')body=`<div class="media-bubble"><a href="${esc(url)}" target="_blank" rel="noopener"><img src="${esc(url)}" loading="lazy" alt="Foto yang dibagikan"></a><a class="media-download" href="${esc(url)}" download="${esc(m.file_name||'foto')}">Unduh file asli · ${prettySize(m.file_size)}</a></div>`;
-      else if(m.kind==='video')body=`<div class="media-bubble"><video controls playsinline preload="metadata" src="${esc(url)}"></video><a class="media-download" href="${esc(url)}" download="${esc(m.file_name||'video')}">Unduh video asli · ${prettySize(m.file_size)}</a></div>`;
-      else body=`<div class="bubble"><audio class="audio-player" controls preload="metadata" src="${esc(url)}"></audio><div class="message-meta">Pesan suara · ${prettySize(m.file_size)}</div><a class="media-download" href="${esc(url)}" download="${esc(m.file_name||'pesan-suara.webm')}">Unduh audio</a></div>`;
+      else if(m.kind==='image')body=`<div class="media-bubble"><a href="${esc(url)}" target="_blank" rel="noopener"><img src="${esc(url)}" loading="lazy" alt="Foto yang dibagikan"></a><a class="media-download" href="#" data-download-key="${esc(m.storage_key)}" data-download-name="${esc(m.file_name||'foto')}">⬇ Simpan foto · ${prettySize(m.file_size)}</a></div>`;
+      else if(m.kind==='video')body=`<div class="media-bubble"><video controls playsinline preload="metadata" src="${esc(url)}"></video><a class="media-download" href="#" data-download-key="${esc(m.storage_key)}" data-download-name="${esc(m.file_name||'video')}">⬇ Simpan video · ${prettySize(m.file_size)}</a></div>`;
+      else body=`<div class="bubble"><audio class="audio-player" controls preload="metadata" src="${esc(url)}"></audio><div class="message-meta">Pesan suara · ${prettySize(m.file_size)}</div><a class="media-download" href="#" data-download-key="${esc(m.storage_key)}" data-download-name="${esc(m.file_name||'pesan-suara.webm')}">⬇ Simpan audio</a></div>`;
     } else body=`<div class="bubble">Lampiran tidak dikenal</div>`;
     row.innerHTML=body+`<div class="message-meta"><span>${mine?'Kamu':'Pasangan'}</span><span>${formatTime(m.created_at)}</span>${mine?`<span class="read-state">${m.read_at?'✓✓ Dibaca':'✓ Terkirim'}</span>`:''}</div>`;
     $('messages').appendChild(row);if(animate)scrollToBottom();
     if(m.kind!=='text') addToGallery(m);
   }
+  $('messages').addEventListener('click',async e=>{
+    const link=e.target.closest('a[data-download-key]');
+    if(!link)return;
+    e.preventDefault();
+    if(link.dataset.downloading==='true')return;
+    link.dataset.downloading='true';
+    const original=link.textContent;
+    link.textContent='Menyiapkan unduhan...';
+    try{
+      const url=await mediaUrl(link.dataset.downloadKey);
+      if(!url)throw new Error('Media tidak bisa diakses. Coba muat ulang chat.');
+      const response=await fetch(url);
+      if(!response.ok)throw new Error('Gagal mengambil file dari penyimpanan.');
+      const blob=await response.blob();
+      const objectUrl=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=objectUrl;
+      a.download=link.dataset.downloadName||'ustwo-media';
+      document.body.appendChild(a);a.click();a.remove();
+      setTimeout(()=>URL.revokeObjectURL(objectUrl),60000);
+      link.textContent='✓ Unduhan dimulai';
+      setTimeout(()=>{if(link.isConnected)link.textContent=original;},2500);
+    }catch(err){console.error(err);toast('Unduhan gagal: '+err.message);link.textContent=original;}
+    finally{delete link.dataset.downloading;}
+  });
   async function mediaUrl(key){
     if(!key)return null;
     try{
