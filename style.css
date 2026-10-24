@@ -40,3 +40,24 @@
     margin-bottom: env(safe-area-inset-bottom, 0px);
   }
 }
+
+
+/* Mobile chat: cegah auto-zoom saat fokus input, seperti pengalaman chat aplikasi */
+@media (max-width: 850px) {
+  #messageInput,
+  .composer textarea,
+  .composer input,
+  input,
+  select {
+    font-size: 16px !important;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  .conversation-panel {
+    min-height: 0;
+  }
+}
