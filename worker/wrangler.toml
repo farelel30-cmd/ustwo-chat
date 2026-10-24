@@ -1,0 +1,14 @@
+name = "ustwo-media-worker"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+# Ganti dengan URL project Supabase kamu.
+SUPABASE_URL = "https://vpuryzhufzicyifdrnmq.supabase.co"
+# Ganti dengan dua UUID akun yang diizinkan, pisahkan koma.
+ALLOWED_USER_IDS = "a11b8edb-90f1-4422-902c-e65f1bdafb5b,02fbab52-9fc8-45c5-bd4b-bb38e17f1c09"
+# Origin situs GitHub Pages (tanpa path).
+ALLOWED_ORIGINS = "https://farelel30-cmd.github.io"
+R2_BUCKET = "ustwo-private-media"
+# Isi Account ID Cloudflare kamu.
+R2_ACCOUNT_ID = "GANTI_DENGAN_CLOUDFLARE_ACCOUNT_ID"
