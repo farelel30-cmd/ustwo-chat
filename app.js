@@ -98,7 +98,14 @@
     $('messages').appendChild(row);if(animate)scrollToBottom();
     if(m.kind!=='text') addToGallery(m);
   }
-  async function mediaUrl(key){if(!key||!cfg.MEDIA_WORKER_URL||cfg.MEDIA_WORKER_URL.includes('YOUR-WORKER'))return null;try{const session=(await supabase.auth.getSession()).data.session;const r=await fetch(cfg.MEDIA_WORKER_URL.replace(/\/$/,'')+'/sign-download',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},body:JSON.stringify({key})});if(!r.ok)throw new Error('Tidak bisa mengakses media');return (await r.json()).url;}catch(e){console.warn(e);return null;}}
+  async function mediaUrl(key){
+    if(!key)return null;
+    try{
+      const {data,error}=await supabase.storage.from('ustwo-media').createSignedUrl(key,3600);
+      if(error)throw error;
+      return data?.signedUrl||null;
+    }catch(e){console.warn('URL media:',e.message);return null;}
+  }
   function addToGallery(m){const urlSafe=esc(m.storage_key||'');const a=document.createElement('a');a.href='#';a.title=m.file_name||m.kind;a.innerHTML=m.kind==='image'?'<span>▧</span>':m.kind==='video'?'<span>▶</span>':'<span>🎙</span>';a.style.cssText='flex:0 0 74px;height:74px;display:grid;place-items:center;border-radius:12px;background:#fce8f1;color:#b7527f;text-decoration:none;font-size:25px';a.addEventListener('click',async e=>{e.preventDefault();const url=await mediaUrl(m.storage_key);if(url)window.open(url,'_blank','noopener');});$('galleryItems').appendChild(a);}
   async function markUnreadRead(ids){if(!ids.length)return;const {error}=await supabase.from('messages').update({read_at:new Date().toISOString()}).in('id',ids).is('read_at',null);if(error)console.warn('read status:',error.message);}
   function updateReadState(m){const el=document.querySelector(`[data-message-id="${CSS.escape(m.id)}"] .read-state`);if(el&&m.read_at)el.textContent='✓✓ Dibaca';}
@@ -107,21 +114,44 @@
   $('attachBtn').addEventListener('click',()=>$('fileInput').click());
   $('fileInput').addEventListener('change',async e=>{const file=e.target.files?.[0];e.target.value='';if(file)await uploadMedia(file);});
   async function uploadMedia(file){
-    if(!cfg.MEDIA_WORKER_URL||cfg.MEDIA_WORKER_URL.includes('YOUR-WORKER')){toast('Penyimpanan media belum dikonfigurasi. Ikuti README.');return;}
-    if(file.size<=0){toast('File kosong.');return;}if(file.size>5*1024*1024*1024){toast('File lebih dari 5 GB belum didukung pada versi ini.');return;}
-    const kind=file.type.startsWith('image/')?'image':file.type.startsWith('video/')?'video':null;if(!kind){toast('Pilih foto atau video.');return;}
-    const session=(await supabase.auth.getSession()).data.session;if(!session){toast('Silakan login kembali.');return;}
-    const status=$('uploadStatus');status.classList.remove('hidden');$('uploadLabel').textContent=`Mengunggah ${file.name}`;$('uploadPercent').textContent='0%';$('uploadProgress').style.width='0%';$('attachBtn').disabled=true;
+    if(file.size<=0){toast('File kosong.');return;}
+    if(file.size>50*1024*1024){toast('File lebih dari 50 MB. Periksa batas unggahan Storage Supabase atau coba file lebih kecil.');return;}
+    const kind=file.type.startsWith('image/')?'image':file.type.startsWith('video/')?'video':null;
+    if(!kind){toast('Pilih foto atau video.');return;}
+    const session=(await supabase.auth.getSession()).data.session;
+    if(!session){toast('Silakan login kembali.');return;}
+    const status=$('uploadStatus');status.classList.remove('hidden');
+    $('uploadLabel').textContent=`Mengunggah ${file.name}`;
+    $('uploadPercent').textContent='...';$('uploadProgress').style.width='25%';$('attachBtn').disabled=true;
     try{
-      const sign=await fetch(cfg.MEDIA_WORKER_URL.replace(/\/$/,'')+'/sign-upload',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},body:JSON.stringify({fileName:file.name,mimeType:file.type||'application/octet-stream',fileSize:file.size})});
-      if(!sign.ok)throw new Error((await sign.text()).slice(0,250)||'Gagal meminta tautan unggah');const {url,key}=await sign.json();
-      await putWithProgress(url,file,(pct)=>{$('uploadPercent').textContent=`${pct}%`;$('uploadProgress').style.width=`${pct}%`;});
-      const ok=await sendRow({kind,storage_key:key,file_name:file.name,mime_type:file.type,file_size:file.size,content:null});if(ok)toast('Media berhasil dikirim tanpa kompresi ulang.');
-    }catch(err){console.error(err);toast(`Unggahan gagal: ${err.message}`);}finally{status.classList.add('hidden');$('attachBtn').disabled=false;}
+      const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_').slice(-100)||'media';
+      const key=`${currentUser.id}/${crypto.randomUUID()}-${safeName}`;
+      const {error}=await supabase.storage.from('ustwo-media').upload(key,file,{contentType:file.type||'application/octet-stream',upsert:false});
+      if(error)throw error;
+      $('uploadPercent').textContent='100%';$('uploadProgress').style.width='100%';
+      const ok=await sendRow({kind,storage_key:key,file_name:file.name,mime_type:file.type,file_size:file.size,content:null});
+      if(ok)toast('Media berhasil dikirim ♡');
+    }catch(err){console.error(err);toast(`Unggahan gagal: ${err.message}`);}
+    finally{status.classList.add('hidden');$('attachBtn').disabled=false;}
   }
-  function putWithProgress(url,file,onProgress){return new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();xhr.open('PUT',url);xhr.setRequestHeader('Content-Type',file.type||'application/octet-stream');xhr.upload.onprogress=e=>{if(e.lengthComputable)onProgress(Math.round(e.loaded/e.total*100));};xhr.onload=()=>xhr.status>=200&&xhr.status<300?resolve():reject(new Error(`Storage merespons ${xhr.status}. Periksa CORS bucket.`));xhr.onerror=()=>reject(new Error('Koneksi unggah terputus. Coba lagi dengan koneksi stabil.'));xhr.onabort=()=>reject(new Error('Unggahan dibatalkan.'));xhr.send(file);});}
+  function putWithProgress(url,file,onProgress){return Promise.reject(new Error('Unggah menggunakan Supabase Storage.'));}
   $('voiceBtn').addEventListener('click',async()=>{if(!isRecording){if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){toast('Browser ini belum mendukung rekaman suara. Coba Safari atau Chrome versi terbaru.');return;}try{const stream=await navigator.mediaDevices.getUserMedia({audio:true});recordedChunks=[];recorder=new MediaRecorder(stream);recorder.ondataavailable=e=>{if(e.data.size)recordedChunks.push(e.data);};recorder.onstop=async()=>{stream.getTracks().forEach(t=>t.stop());const blob=new Blob(recordedChunks,{type:recorder.mimeType||'audio/webm'});if(blob.size){const ext=(blob.type.split('/')[1]||'webm').split(';')[0];await uploadAudio(new File([blob],`pesan-suara-${Date.now()}.${ext}`,{type:blob.type}));}};recorder.start();isRecording=true;$('voiceBtn').textContent='■';$('voiceBtn').style.background='#f5c5d8';toast('Merekam pesan suara… tekan tombol lagi untuk berhenti.');}catch(e){toast('Izin mikrofon belum diberikan. Aktifkan akses mikrofon pada browser.');}}else{recorder.stop();isRecording=false;$('voiceBtn').textContent='🎙';$('voiceBtn').style.background='';}});
-  async function uploadAudio(file){if(!cfg.MEDIA_WORKER_URL||cfg.MEDIA_WORKER_URL.includes('YOUR-WORKER')){toast('Penyimpanan media belum dikonfigurasi.');return;}const session=(await supabase.auth.getSession()).data.session;const status=$('uploadStatus');status.classList.remove('hidden');$('uploadLabel').textContent='Mengunggah pesan suara...';try{const sign=await fetch(cfg.MEDIA_WORKER_URL.replace(/\/$/,'')+'/sign-upload',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},body:JSON.stringify({fileName:file.name,mimeType:file.type,fileSize:file.size})});if(!sign.ok)throw new Error('Gagal meminta tautan unggah');const {url,key}=await sign.json();await putWithProgress(url,file,pct=>{$('uploadPercent').textContent=`${pct}%`;$('uploadProgress').style.width=`${pct}%`;});if(await sendRow({kind:'audio',storage_key:key,file_name:file.name,mime_type:file.type,file_size:file.size}))toast('Pesan suara terkirim ♡');}catch(e){toast(`Pesan suara gagal dikirim: ${e.message}`);}finally{status.classList.add('hidden');}}
+  async function uploadAudio(file){
+    if(file.size>50*1024*1024){toast('Pesan suara lebih dari 50 MB.');return;}
+    const session=(await supabase.auth.getSession()).data.session;
+    if(!session){toast('Silakan login kembali.');return;}
+    const status=$('uploadStatus');status.classList.remove('hidden');
+    $('uploadLabel').textContent='Mengunggah pesan suara...';$('uploadPercent').textContent='...';$('uploadProgress').style.width='25%';
+    try{
+      const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_').slice(-100)||'voice.webm';
+      const key=`${currentUser.id}/${crypto.randomUUID()}-${safeName}`;
+      const {error}=await supabase.storage.from('ustwo-media').upload(key,file,{contentType:file.type||'audio/webm',upsert:false});
+      if(error)throw error;
+      $('uploadPercent').textContent='100%';$('uploadProgress').style.width='100%';
+      if(await sendRow({kind:'audio',storage_key:key,file_name:file.name,mime_type:file.type,file_size:file.size}))toast('Pesan suara terkirim ♡');
+    }catch(e){console.error(e);toast(`Pesan suara gagal dikirim: ${e.message}`);}
+    finally{status.classList.add('hidden');}
+  }
   $('galleryBtn').addEventListener('click',()=>$('galleryPanel').classList.toggle('hidden'));$('closeGallery').addEventListener('click',()=>$('galleryPanel').classList.add('hidden'));$('aboutBtn').addEventListener('click',()=>$('aboutDialog').showModal());
   window.addEventListener('beforeunload',()=>{if(presenceChannel)presenceChannel.untrack();});
   init();
