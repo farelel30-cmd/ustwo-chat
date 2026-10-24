@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#fff4f8"><meta name="description" content="Ruang chat pribadi UsTwo Chat.">
+  <title>UsTwo Chat ♡</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="ambient ambient-a">♡</div><div class="ambient ambient-b">✿</div>
+  <main class="shell">
+    <section id="authView" class="auth-layout">
+      <div class="brand-art"><div class="brand-mark">♡</div><p class="eyebrow">A PRIVATE PLACE FOR TWO</p><h1>Just us,<br><em>in every moment.</em></h1><p class="intro">Tempat kecil buat ngobrol, kirim foto jernih, dan menyimpan suara satu sama lain.</p><div class="floating-hearts">♡　✧　♡</div></div>
+      <div class="auth-card"><div class="mini-brand">♡ <span>UsTwo Chat</span></div><h2 id="authHeading">Hai, kamu ♡</h2><p class="muted" id="authSubheading">Masuk ke ruang pribadi kalian.</p>
+        <form id="authForm"><label for="email">Email</label><input id="email" type="email" autocomplete="email" placeholder="kamu@email.com" required><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" minlength="6" placeholder="Minimal 6 karakter" required><button id="authSubmit" class="btn primary full" type="submit">Masuk ke chat <span>♡</span></button><p id="authMessage" class="message" role="status"></p></form>
+        <button id="toggleAuth" class="text-button" type="button">Belum punya akun? Daftar</button><p class="tiny">Akses dibatasi untuk dua akun yang diizinkan oleh pemilik project.</p>
+      </div>
+    </section>
+
+    <section id="chatView" class="chat-app hidden">
+      <aside class="sidebar"><header class="side-header"><div class="mini-brand">♡ <span>UsTwo Chat</span></div><button id="logoutBtn" class="icon-btn" title="Keluar" aria-label="Keluar">↪</button></header><div class="couple-card"><div class="couple-avatars"><span>♡</span><span>♡</span></div><div><strong>Ruang kecil kita</strong><p>khusus kamu dan aku</p></div><span class="online-dot"></span></div><div class="section-label">PERCakapan</div><button class="conversation active"><span class="conversation-avatar">♡</span><span class="conversation-copy"><strong>UsTwo Chat</strong><small id="lastPreview">Mulai cerita hari ini...</small></span><span class="conversation-heart">♥</span></button><div class="privacy-card"><span>🔒</span><div><b>Ruang pribadi</b><p>Hanya akun yang diizinkan yang bisa masuk.</p></div></div><div class="side-footer"><span class="online-dot"></span><span id="connectionLabel">Menghubungkan...</span></div></aside>
+      <section class="conversation-panel"><header class="chat-header"><div class="mobile-brand mini-brand">♡ <span>UsTwo Chat</span></div><div class="chat-person-avatar">♡</div><div class="chat-person"><strong id="partnerTitle">Ruang kecil kita</strong><small id="presenceText">Obrolan pribadi kalian</small></div><div class="header-actions"><button id="galleryBtn" class="icon-btn" title="Galeri media" aria-label="Galeri media">▧</button><button id="aboutBtn" class="icon-btn" title="Tentang keamanan" aria-label="Tentang keamanan">ⓘ</button></div></header>
+        <div id="galleryPanel" class="gallery-panel hidden"><div class="gallery-heading"><b>Media di percakapan</b><button id="closeGallery" class="text-button">Tutup</button></div><div id="galleryItems" class="gallery-items"><p class="muted">Media akan muncul di sini setelah dikirim.</p></div></div>
+        <div id="messages" class="messages" aria-live="polite"><div class="welcome-note"><span>♡</span><b>Selamat datang di ruang kalian</b><p>Obrolan, foto, video, dan pesan suara disimpan online setelah layanan dikonfigurasi.</p></div></div>
+        <div id="typingIndicator" class="typing hidden"><span></span><span></span><span></span><small>sedang mengetik...</small></div>
+        <div id="uploadStatus" class="upload-status hidden"><div class="upload-top"><span id="uploadLabel">Mengunggah media...</span><span id="uploadPercent">0%</span></div><div class="progress"><span id="uploadProgress"></span></div></div>
+        <form id="composer" class="composer"><input id="fileInput" type="file" accept="image/*,video/*" hidden><button id="attachBtn" class="attach-btn" type="button" aria-label="Kirim foto atau video" title="Foto atau video">＋</button><textarea id="messageInput" rows="1" maxlength="5000" placeholder="Tulis pesan untuknya..." aria-label="Tulis pesan"></textarea><button id="voiceBtn" class="voice-btn" type="button" aria-label="Rekam pesan suara" title="Tekan untuk mulai rekam">🎙</button><button id="sendBtn" class="send-btn" type="submit" aria-label="Kirim pesan">➤</button></form><div class="composer-note">Foto dan video dikirim tanpa kompresi ulang · Batas unggahan mengikuti layanan penyimpanan</div>
+      </section>
+    </section>
+    <div id="toast" class="toast" role="status"></div>
+    <dialog id="aboutDialog" class="about-dialog"><form method="dialog"><button class="dialog-close" aria-label="Tutup">×</button><span class="dialog-heart">♡</span><h2>Privat untuk kalian</h2><p>UsTwo Chat dirancang untuk dua akun yang diizinkan. Foto dan video tidak dikompresi ulang oleh aplikasi. Keamanan aktual bergantung pada aturan Supabase, konfigurasi penyimpanan, dan worker yang dipasang dengan benar.</p><button class="btn primary full">Mengerti</button></form></dialog>
+  </main>
+  <script src="config.js"></script><script src="app.js"></script>
+</body></html>
