@@ -91,3 +91,17 @@ end; $$;
 drop trigger if exists protect_message_update_trigger on public.messages;
 create trigger protect_message_update_trigger before update on public.messages
 for each row execute function public.protect_message_update();
+
+
+-- MIGRASI UsTwo Chat: balas pesan + wallpaper bersama.
+alter table public.messages add column if not exists reply_to_id uuid null references public.messages(id) on delete set null;
+create index if not exists messages_reply_to_id_idx on public.messages(reply_to_id);
+create table if not exists public.chat_settings (id integer primary key check (id = 1), wallpaper text not null default 'pink' check (wallpaper in ('pink','sunset','lavender','sky','cream')), updated_by uuid references auth.users(id) on delete set null, updated_at timestamptz not null default now());
+insert into public.chat_settings(id,wallpaper) values (1,'pink') on conflict (id) do nothing;
+alter table public.chat_settings enable row level security;
+drop policy if exists "Members can read shared chat settings" on public.chat_settings;
+create policy "Members can read shared chat settings" on public.chat_settings for select to authenticated using (public.is_chat_member(auth.uid()));
+drop policy if exists "Members can update shared chat settings" on public.chat_settings;
+create policy "Members can update shared chat settings" on public.chat_settings for update to authenticated using (public.is_chat_member(auth.uid())) with check (public.is_chat_member(auth.uid()));
+grant select, update on public.chat_settings to authenticated;
+do $$ begin alter publication supabase_realtime add table public.chat_settings; exception when duplicate_object then null; when undefined_object then raise notice 'Aktifkan Realtime untuk chat_settings dari dashboard.'; end $$;
