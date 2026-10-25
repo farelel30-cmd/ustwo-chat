@@ -4,7 +4,7 @@
   const authView = $('authView'), chatView = $('chatView'), authForm = $('authForm');
   let supabase = null, currentUser = null, messagesChannel = null, presenceChannel = null;
   let authMode = 'login', typingTimer = null, typingClearTimer = null, recorder = null, recordedChunks = [], isRecording = false;
-  let knownMessages = new Set(), toastTimer = null, profileChannel = null, profiles = {}, pendingAvatar = undefined;
+  let knownMessages = new Set(), toastTimer = null, profileChannel = null, profiles = {}, pendingAvatar = undefined, replyTarget = null, messageCache = new Map(), settingsChannel = null;
   const allowed = new Set((cfg.ALLOWED_USER_IDS || []).filter(x => x && !x.includes('UUID')));
   const esc = (value='') => String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const formatTime = (value) => new Intl.DateTimeFormat('id-ID',{hour:'2-digit',minute:'2-digit'}).format(new Date(value));
@@ -41,9 +41,9 @@
   async function enterApp(user) {
     if(!allowedUser(user)){await supabase.auth.signOut();showAuth('Akun ini belum diizinkan masuk ke UsTwo Chat.');return;}
     currentUser=user; showChat(); setConnection('Menghubungkan...',false); $('partnerTitle').textContent='Ruang kecil kita';
-    await loadProfiles(); subscribeProfiles(); await loadMessages(); subscribeMessages(); subscribePresence();
+    await loadProfiles(); subscribeProfiles(); await loadMessages(); subscribeMessages(); subscribePresence(); await loadChatSettings(); subscribeChatSettings();
   }
-  async function cleanupChannels(){ if(messagesChannel)await supabase.removeChannel(messagesChannel); if(presenceChannel)await supabase.removeChannel(presenceChannel); if(profileChannel)await supabase.removeChannel(profileChannel); messagesChannel=null;presenceChannel=null;profileChannel=null; }
+  async function cleanupChannels(){ if(messagesChannel)await supabase.removeChannel(messagesChannel); if(presenceChannel)await supabase.removeChannel(presenceChannel); if(profileChannel)await supabase.removeChannel(profileChannel); if(settingsChannel)await supabase.removeChannel(settingsChannel); messagesChannel=null;presenceChannel=null;profileChannel=null;settingsChannel=null; }
   const partnerId = () => [...allowed].find(id=>id!==currentUser?.id);
   const displayName = (id) => profiles[id]?.display_name || cfg.DISPLAY_NAMES?.[id] || (id===currentUser?.id?'Kamu':'Pasangan');
   function avatarMarkup(id, cls='') { const p=profiles[id]; return p?.avatar_data ? '<img class="'+cls+'" src="'+esc(p.avatar_data)+'" alt="Foto profil">' : '<span class="'+cls+' avatar-fallback">'+esc(displayName(id).slice(0,1).toUpperCase()||'♡')+'</span>'; }
@@ -60,6 +60,7 @@
     if(error){toast('Belum bisa memuat chat. Periksa SQL dan aturan akses.');console.error(error);return;}
     $('messages').innerHTML='';knownMessages.clear();
     if(!data.length) renderWelcome();
+    for(const row of data) messageCache.set(row.id,row);
     for(const row of data) await renderMessage(row,false);
     scrollToBottom(); markUnreadRead(data.filter(m=>m.sender_id!==currentUser.id && !m.read_at).map(m=>m.id));
     if(data.length) $('lastPreview').textContent=preview(data[data.length-1]);
@@ -68,7 +69,7 @@
   function preview(m){ if(m.kind==='image')return '♡ Foto'; if(m.kind==='video')return '♡ Video'; if(m.kind==='audio')return '🎙 Pesan suara'; return (m.content||'').slice(0,70); }
   function subscribeMessages(){
     messagesChannel=supabase.channel('ustwo-messages').on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},async payload=>{
-      if(!knownMessages.has(payload.new.id)){await renderMessage(payload.new,true);$('lastPreview').textContent=preview(payload.new);scrollToBottom();if(payload.new.sender_id!==currentUser.id)markUnreadRead([payload.new.id]);}
+      if(!knownMessages.has(payload.new.id)){messageCache.set(payload.new.id,payload.new);await renderMessage(payload.new,true);$('lastPreview').textContent=preview(payload.new);scrollToBottom();if(payload.new.sender_id!==currentUser.id)markUnreadRead([payload.new.id]);}
     }).on('postgres_changes',{event:'UPDATE',schema:'public',table:'messages'},payload=>updateReadState(payload.new)).subscribe(status=>setConnection(status==='SUBSCRIBED'?'Online · tersambung':`Status: ${status}`,status==='SUBSCRIBED'));
   }
   function subscribePresence(){
@@ -81,10 +82,14 @@
   async function sendTyping(typing){ if(!presenceChannel)return; try{await presenceChannel.track({online:true,typing});await presenceChannel.send({type:'broadcast',event:'typing',payload:{userId:currentUser.id,typing}});}catch(e){} }
   $('messageInput').addEventListener('input',()=>{const el=$('messageInput');el.style.height='auto';el.style.height=Math.min(el.scrollHeight,130)+'px';sendTyping(true);clearTimeout(typingTimer);typingTimer=setTimeout(()=>sendTyping(false),1000);});
   $('messageInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('composer').requestSubmit();}});
-  $('composer').addEventListener('submit',async e=>{e.preventDefault();const input=$('messageInput'),text=input.value.trim();if(!text||!currentUser)return;input.value='';input.style.height='auto';await sendRow({kind:'text',content:text});sendTyping(false);});
-  async function sendRow(row){const {error}=await supabase.from('messages').insert({sender_id:currentUser.id,kind:row.kind,content:row.content||null,storage_key:row.storage_key||null,file_name:row.file_name||null,mime_type:row.mime_type||null,file_size:row.file_size||null});if(error){toast(`Pesan gagal dikirim: ${error.message}`);console.error(error);return false;}return true;}
+  $('composer').addEventListener('submit',async e=>{e.preventDefault();const input=$('messageInput'),text=input.value.trim();if(!text||!currentUser)return;input.value='';input.style.height='auto';const target=replyTarget;const ok=await sendRow({kind:'text',content:text,reply_to_id:target?.id||null});if(ok)clearReply();sendTyping(false);});
+  function clearReply(){replyTarget=null;$('replyPreview').classList.add('hidden');$('replyPreviewText').textContent='';}
+  function beginReply(id){const m=messageCache.get(id);if(!m)return;replyTarget=m;$('replyPreviewText').textContent=preview(m);$('replyPreview').classList.remove('hidden');$('messageInput').focus();document.querySelectorAll('.message-menu').forEach(el=>el.classList.add('hidden'));}
+  $('cancelReplyBtn').addEventListener('click',clearReply);
+  $('messages').addEventListener('click',e=>{const menuBtn=e.target.closest('[aria-label="Aksi pesan"]');if(menuBtn){const menu=menuBtn.parentElement.querySelector('.message-menu');document.querySelectorAll('.message-menu').forEach(el=>{if(el!==menu)el.classList.add('hidden');});menu.classList.toggle('hidden');return;}const reply=e.target.closest('[data-reply-message]');if(reply){beginReply(reply.dataset.replyMessage);return;}const jump=e.target.closest('[data-jump-message]');if(jump){const target=document.querySelector(`[data-message-id="${CSS.escape(jump.dataset.jumpMessage)}"]`);if(target){target.scrollIntoView({behavior:'smooth',block:'center'});target.classList.add('message-highlight');setTimeout(()=>target.classList.remove('message-highlight'),1400);}else toast('Pesan asli tidak ada di daftar yang sedang dimuat.');}});
+  async function sendRow(row){const {error}=await supabase.from('messages').insert({sender_id:currentUser.id,kind:row.kind,content:row.content||null,storage_key:row.storage_key||null,file_name:row.file_name||null,mime_type:row.mime_type||null,file_size:row.file_size||null,reply_to_id:row.reply_to_id||null});if(error){toast(`Pesan gagal dikirim: ${error.message}`);console.error(error);return false;}return true;}
   async function renderMessage(m,animate=true){
-    if(knownMessages.has(m.id))return;knownMessages.add(m.id);const welcome=$('messages').querySelector('.welcome-note');if(welcome)welcome.remove();
+    if(knownMessages.has(m.id))return;knownMessages.add(m.id);messageCache.set(m.id,m);const welcome=$('messages').querySelector('.welcome-note');if(welcome)welcome.remove();
     const mine=m.sender_id===currentUser.id;const row=document.createElement('article');row.className=`message-row${mine?' mine':''}`;row.dataset.messageId=m.id;
     let body='';
     if(m.kind==='text') body=`<div class="bubble">${esc(m.content||'')}</div>`;
@@ -94,7 +99,8 @@
       else if(m.kind==='video')body=`<div class="media-bubble"><video controls playsinline preload="metadata" src="${esc(url)}"></video><a class="media-download" href="#" data-download-key="${esc(m.storage_key)}" data-download-name="${esc(m.file_name||'video')}">⬇ Simpan video · ${prettySize(m.file_size)}</a></div>`;
       else body=`<div class="bubble"><audio class="audio-player" controls preload="metadata" src="${esc(url)}"></audio><div class="message-meta">Pesan suara · ${prettySize(m.file_size)}</div><a class="media-download" href="#" data-download-key="${esc(m.storage_key)}" data-download-name="${esc(m.file_name||'pesan-suara.webm')}">⬇ Simpan audio</a></div>`;
     } else body=`<div class="bubble">Lampiran tidak dikenal</div>`;
-    row.innerHTML=body+`<div class="message-meta"><span>${mine?'Kamu':'Pasangan'}</span><span>${formatTime(m.created_at)}</span>${mine?`<span class="read-state">${m.read_at?'✓✓ Dibaca':'✓ Terkirim'}</span>`:''}</div>`;
+    let replyQuote='';if(m.reply_to_id){const original=messageCache.get(m.reply_to_id);replyQuote=`<button class="reply-quote" type="button" data-jump-message="${esc(m.reply_to_id)}"><small>Membalas ${original?.sender_id===currentUser.id?'pesan kamu':'pesan pasangan'}</small><span>${esc(original?preview(original):'Pesan asli')}</span></button>`;}
+    row.innerHTML=replyQuote+body+`<div class="message-actions"><button type="button" class="message-menu-btn" aria-label="Aksi pesan" title="Aksi pesan">⋯</button><div class="message-menu hidden"><button type="button" data-reply-message="${esc(m.id)}">↩ Balas</button></div></div><div class="message-meta"><span>${mine?'Kamu':'Pasangan'}</span><span>${formatTime(m.created_at)}</span>${mine?`<span class="read-state">${m.read_at?'✓✓ Dibaca':'✓ Terkirim'}</span>`:''}</div>`;
     $('messages').appendChild(row);if(animate)scrollToBottom();
     if(m.kind!=='text') addToGallery(m);
   }
@@ -177,6 +183,13 @@
     }catch(e){console.error(e);toast(`Pesan suara gagal dikirim: ${e.message}`);}
     finally{status.classList.add('hidden');}
   }
+
+  function applyWallpaper(value){const valid=['pink','sunset','lavender','sky','cream'];const v=valid.includes(value)?value:'pink';const el=$('messages');['pink','sunset','lavender','sky','cream'].forEach(x=>el.classList.remove('wallpaper-'+x));el.classList.add('wallpaper-'+v);const radio=document.querySelector('input[name="wallpaper"][value="'+v+'"]');if(radio)radio.checked=true;}
+  async function loadChatSettings(){const {data,error}=await supabase.from('chat_settings').select('wallpaper').eq('id',1).maybeSingle();if(error){console.warn('Pengaturan chat:',error.message);toast('Jalankan migrasi SQL untuk fitur wallpaper bersama.');return;}if(data?.wallpaper)applyWallpaper(data.wallpaper);}
+  function subscribeChatSettings(){settingsChannel=supabase.channel('ustwo-chat-settings').on('postgres_changes',{event:'UPDATE',schema:'public',table:'chat_settings'},payload=>{if(payload.new?.wallpaper)applyWallpaper(payload.new.wallpaper);}).subscribe();}
+  $('wallpaperBtn').addEventListener('click',()=>{$('wallpaperDialog').showModal();});
+  $('closeWallpaperBtn').addEventListener('click',()=>$('wallpaperDialog').close());
+  $('wallpaperForm').addEventListener('submit',async e=>{e.preventDefault();const value=document.querySelector('input[name="wallpaper"]:checked')?.value||'pink';const btn=$('saveWallpaperBtn');btn.disabled=true;$('wallpaperMessage').textContent='Menyimpan...';try{const {data,error}=await supabase.from('chat_settings').update({wallpaper:value,updated_by:currentUser.id,updated_at:new Date().toISOString()}).eq('id',1).select().single();if(error)throw error;applyWallpaper(data.wallpaper);$('wallpaperDialog').close();toast('Wallpaper bersama berhasil diganti ♡');}catch(err){$('wallpaperMessage').textContent='Belum tersimpan: '+err.message;}finally{btn.disabled=false;}});
   $('galleryBtn').addEventListener('click',()=>$('galleryPanel').classList.toggle('hidden'));$('closeGallery').addEventListener('click',()=>$('galleryPanel').classList.add('hidden'));$('aboutBtn').addEventListener('click',()=>$('aboutDialog').showModal());
   window.addEventListener('beforeunload',()=>{if(presenceChannel)presenceChannel.untrack();});
   init();
